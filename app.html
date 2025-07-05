@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imprimeur de Colis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* [Keep all your existing styles the same] */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .upload-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+            text-align: center;
+        }
+        #excelFile {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .upload-btn:hover {
+            background-color: #45a049;
+        }
+        #results {
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .print-btn {
+            background-color: #008CBA;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .print-btn:hover {
+            background-color: #0077a3;
+        }
+        @media print {
+            .no-print {
+                display: none;
+            }
+            table {
+                width: 100%;
+                font-size: 12px;
+            }
+            th, td {
+                padding: 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Imprimeur de Colis</h1>
+        
+        <div class="upload-section no-print">
+            <h2>Télécharger le fichier Excel</h2>
+            <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" />
+            <button class="upload-btn" onclick="document.getElementById('excelFile').click()">Sélectionner un fichier</button>
+            <p id="fileName"></p>
+        </div>
+        
+        <div id="results"></div>
+        
+        <button class="print-btn no-print" onclick="window.print()" style="display: none;">Imprimer</button>
+    </div>
+
+    <script>
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('fileName').textContent = `Fichier sélectionné: ${file.name}`;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Get the first sheet
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    // Convert to JSON array (raw data)
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    if (jsonData.length === 0) {
+                        alert("Le fichier Excel est vide.");
+                        return;
+                    }
+                    
+                    // Define our required columns with all possible name variations
+                    const requiredColumns = {
+                        'code-barres': ['code-barres', 'codebarres', 'barcode'],
+                        'expediteur': ['expediteur', 'nom de l\'expediteur', 'sender', 'expéditeur'],
+                        'prix': ['prix', 'valeur cod', 'valeur', 'montant', 'price'],
+                        'adresse client': ['adresse client', 'adresse', 'address', 'client address'],
+                        'numero client': ['numero client', 'numéro client', 'contact telephone', 'téléphone', 'phone', 'tel']
+                    };
+                    
+                    // Find which row contains our headers
+                    let headerRowIndex = -1;
+                    let foundHeaders = {};
+                    
+                    // Search through all rows to find the one containing our required columns
+                    for (let i = 0; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row) continue;
+                        
+                        // Check if this row contains our required columns
+                        const lowercaseRow = row.map(cell => cell ? cell.toString().toLowerCase() : '');
+                        
+                        let allFound = true;
+                        const currentFound = {};
+                        
+                        for (const [colName, aliases] of Object.entries(requiredColumns)) {
+                            let found = false;
+                            for (const alias of aliases) {
+                                const index = lowercaseRow.findIndex(cell => cell.includes(alias.toLowerCase()));
+                                if (index !== -1) {
+                                    currentFound[colName] = index;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                allFound = false;
+                                break;
+                            }
+                        }
+                        
+                        if (allFound) {
+                            headerRowIndex = i;
+                            foundHeaders = currentFound;
+                            break;
+                        }
+                    }
+                    
+                    if (headerRowIndex === -1) {
+                        const availableColumns = jsonData.flatMap(row => row || []).filter(Boolean);
+                        alert(`Impossible de trouver les colonnes requises dans le fichier.\n\nColonnes disponibles: ${availableColumns.join(', ')}`);
+                        return;
+                    }
+                    
+                    // Create HTML table
+                    let html = '<h2>Résultats</h2><table><tr>';
+                    
+                    // Add header row with display names
+                    for (const colName in foundHeaders) {
+                        html += `<th>${colName}</th>`;
+                    }
+                    html += '</tr>';
+                    
+                    // Add data rows (skip the header row)
+                    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row || row.length === 0) continue;
+                        
+                        html += '<tr>';
+                        for (const colName in foundHeaders) {
+                            const colIndex = foundHeaders[colName];
+                            const cellValue = colIndex < row.length ? (row[colIndex] || '') : '';
+                            html += `<td>${cellValue}</td>`;
+                        }
+                        html += '</tr>';
+                    }
+                    
+                    html += '</table>';
+                    document.getElementById('results').innerHTML = html;
+                    document.querySelector('.print-btn').style.display = 'block';
+                    
+                } catch (error) {
+                    alert(`Erreur de traitement: ${error.message}`);
+                    console.error(error);
+                }
+            };
+            
+            reader.readAsArrayBuffer(file);
+        });
+    </script>
+</body>
+</html>
