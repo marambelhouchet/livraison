@@ -6,7 +6,6 @@
     <title>Imprimeur de Colis</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        /* [Keep all your existing styles the same] */
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
@@ -22,7 +21,7 @@
             border-radius: 5px;
             text-align: center;
         }
-        #excelFile {
+        #folderInput {
             display: none;
         }
         .upload-btn {
@@ -83,6 +82,11 @@
                 padding: 4px;
             }
         }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -90,10 +94,11 @@
         <h1>Imprimeur de Colis</h1>
         
         <div class="upload-section no-print">
-            <h2>Télécharger le fichier Excel</h2>
-            <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" />
-            <button class="upload-btn" onclick="document.getElementById('excelFile').click()">Sélectionner un fichier</button>
-            <p id="fileName"></p>
+            <h2>Sélectionner un dossier</h2>
+            <input type="file" id="folderInput" webkitdirectory directory multiple />
+            <button class="upload-btn" onclick="document.getElementById('folderInput').click()">Sélectionner un dossier</button>
+            <p id="folderName" class="status"></p>
+            <p id="processingStatus" class="status"></p>
         </div>
         
         <div id="results"></div>
@@ -102,11 +107,28 @@
     </div>
 
     <script>
-        document.getElementById('excelFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        document.getElementById('folderInput').addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
             
-            document.getElementById('fileName').textContent = `Fichier sélectionné: ${file.name}`;
+            document.getElementById('folderName').textContent = `Dossier sélectionné: ${files[0].webkitRelativePath.split('/')[0]}`;
+            document.getElementById('processingStatus').textContent = "Recherche du fichier Excel le plus récent...";
+            
+            // Filter Excel files and find the most recent one
+            const excelFiles = Array.from(files).filter(file => 
+                file.name.match(/\.(xlsx|xls|csv)$/i)
+            );
+            
+            if (excelFiles.length === 0) {
+                document.getElementById('processingStatus').textContent = "Aucun fichier Excel trouvé dans le dossier.";
+                return;
+            }
+            
+            // Sort by last modified date (newest first)
+            excelFiles.sort((a, b) => b.lastModified - a.lastModified);
+            const mostRecentFile = excelFiles[0];
+            
+            document.getElementById('processingStatus').textContent = `Traitement du fichier: ${mostRecentFile.name}`;
             
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -204,14 +226,15 @@
                     html += '</table>';
                     document.getElementById('results').innerHTML = html;
                     document.querySelector('.print-btn').style.display = 'block';
+                    document.getElementById('processingStatus').textContent = `Fichier traité avec succès: ${mostRecentFile.name}`;
                     
                 } catch (error) {
-                    alert(`Erreur de traitement: ${error.message}`);
+                    document.getElementById('processingStatus').textContent = `Erreur de traitement: ${error.message}`;
                     console.error(error);
                 }
             };
             
-            reader.readAsArrayBuffer(file);
+            reader.readAsArrayBuffer(mostRecentFile);
         });
     </script>
 </body>
