@@ -87,16 +87,23 @@
             font-style: italic;
             color: #666;
         }
+        .disclaimer {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Imprimeur de Colis</h1>
         
         <div class="upload-section no-print">
-            <h2>Sélectionner un dossier</h2>
+            <h2>Sélectionner un dossier contenant des fichiers Excel</h2>
+            <p class="disclaimer">Le navigateur peut afficher un avertissement de sécurité - c'est normal pour les sélections de dossier.</p>
             <input type="file" id="folderInput" webkitdirectory directory multiple />
-            <button class="upload-btn" onclick="document.getElementById('folderInput').click()">Sélectionner un dossier</button>
+            <button class="upload-btn" onclick="document.getElementById('folderInput').click()">
+                📁 Choisir un dossier
+            </button>
             <p id="folderName" class="status"></p>
             <p id="processingStatus" class="status"></p>
         </div>
@@ -111,35 +118,33 @@
             const files = e.target.files;
             if (!files || files.length === 0) return;
             
-            document.getElementById('folderName').textContent = `Dossier sélectionné: ${files[0].webkitRelativePath.split('/')[0]}`;
-            document.getElementById('processingStatus').textContent = "Recherche du fichier Excel le plus récent...";
+            const folderName = files[0].webkitRelativePath.split('/')[0];
+            document.getElementById('folderName').textContent = `Dossier sélectionné: ${folderName}`;
+            document.getElementById('processingStatus').textContent = "Analyse des fichiers...";
             
-            // Filter Excel files and find the most recent one
+            // 1. Filter only Excel files
             const excelFiles = Array.from(files).filter(file => 
                 file.name.match(/\.(xlsx|xls|csv)$/i)
             );
             
             if (excelFiles.length === 0) {
-                document.getElementById('processingStatus').textContent = "Aucun fichier Excel trouvé dans le dossier.";
+                document.getElementById('processingStatus').textContent = "❌ Aucun fichier Excel trouvé";
                 return;
             }
             
-            // Sort by last modified date (newest first)
+            // 2. Sort by modified date (newest first)
             excelFiles.sort((a, b) => b.lastModified - a.lastModified);
-            const mostRecentFile = excelFiles[0];
+            const targetFile = excelFiles[0];
             
-            document.getElementById('processingStatus').textContent = `Traitement du fichier: ${mostRecentFile.name}`;
+            document.getElementById('processingStatus').textContent = `Traitement de: ${targetFile.name}`;
             
+            // 3. Process the file
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
-                    
-                    // Get the first sheet
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    
-                    // Convert to JSON array (raw data)
                     const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
                     
                     if (jsonData.length === 0) {
@@ -147,7 +152,7 @@
                         return;
                     }
                     
-                    // Define our required columns with all possible name variations
+                    // Column mapping (unchanged from your original)
                     const requiredColumns = {
                         'code-barres': ['code-barres', 'codebarres', 'barcode'],
                         'expediteur': ['expediteur', 'nom de l\'expediteur', 'sender', 'expéditeur'],
@@ -157,18 +162,14 @@
                         'nom du client': ['nom du client', 'nom client', 'client', 'customer name', 'nom', 'name']
                     };
                     
-                    // Find which row contains our headers
                     let headerRowIndex = -1;
                     let foundHeaders = {};
                     
-                    // Search through all rows to find the one containing our required columns
                     for (let i = 0; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row) continue;
                         
-                        // Check if this row contains our required columns
                         const lowercaseRow = row.map(cell => cell ? cell.toString().toLowerCase() : '');
-                        
                         let allFound = true;
                         const currentFound = {};
                         
@@ -197,20 +198,15 @@
                     
                     if (headerRowIndex === -1) {
                         const availableColumns = jsonData.flatMap(row => row || []).filter(Boolean);
-                        alert(`Impossible de trouver les colonnes requises dans le fichier.\n\nColonnes disponibles: ${availableColumns.join(', ')}`);
+                        alert(`Colonnes requises non trouvées.\n\nColonnes disponibles: ${availableColumns.join(', ')}`);
                         return;
                     }
                     
-                    // Create HTML table
-                    let html = '<h2>Résultats</h2><table><tr>';
-                    
-                    // Add header row with display names
-                    for (const colName in foundHeaders) {
-                        html += `<th>${colName}</th>`;
-                    }
+                    // Generate HTML table
+                    let html = '<h2></h2><table><tr>';
+                    for (const colName in foundHeaders) html += `<th>${colName}</th>`;
                     html += '</tr>';
                     
-                    // Add data rows (skip the header row)
                     for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row || row.length === 0) continue;
@@ -227,15 +223,15 @@
                     html += '</table>';
                     document.getElementById('results').innerHTML = html;
                     document.querySelector('.print-btn').style.display = 'block';
-                    document.getElementById('processingStatus').textContent = `Fichier traité avec succès: ${mostRecentFile.name}`;
+                    document.getElementById('processingStatus').textContent = `✅ Fichier traité: ${targetFile.name}`;
                     
                 } catch (error) {
-                    document.getElementById('processingStatus').textContent = `Erreur de traitement: ${error.message}`;
+                    document.getElementById('processingStatus').textContent = `❌ Erreur: ${error.message}`;
                     console.error(error);
                 }
             };
             
-            reader.readAsArrayBuffer(mostRecentFile);
+            reader.readAsArrayBuffer(targetFile);
         });
     </script>
 </body>
